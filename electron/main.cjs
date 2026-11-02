@@ -16,6 +16,7 @@ const HOST = '127.0.0.1'
 const PORT = 4179
 const DIST_DIR = path.resolve(__dirname, '..', 'dist')
 const INDEX_FILE = path.join(DIST_DIR, 'index.html')
+const APP_ORIGIN = `http://${HOST}:${PORT}`
 const CONTENT_TYPES = /** @type {Record<string, string>} */ ({
   '.css': 'text/css; charset=utf-8',
   '.html': 'text/html; charset=utf-8',
@@ -34,7 +35,13 @@ const CONTENT_TYPES = /** @type {Record<string, string>} */ ({
 
 /** @type {import('node:http').Server | undefined} */
 let server
-const LICENSE_DEVICE_KEY = 'desktop-license-device-key'
+
+function assertTrustedLicenseSender(event) {
+  const senderUrl = event.senderFrame?.url
+  if (!senderUrl || new URL(senderUrl).origin !== APP_ORIGIN) {
+    throw new Error('Untrusted licensing IPC request')
+  }
+}
 
 function readDeviceKey() {
   if (!safeStorage.isEncryptionAvailable()) {
@@ -68,8 +75,12 @@ function getLicenseDeviceIdentity() {
   return { deviceId, publicKey: publicJwk }
 }
 
-ipcMain.handle('license:get-device-identity', () => getLicenseDeviceIdentity())
-ipcMain.handle('license:sign-check-in', (_event, message) => {
+ipcMain.handle('license:get-device-identity', (event) => {
+  assertTrustedLicenseSender(event)
+  return getLicenseDeviceIdentity()
+})
+ipcMain.handle('license:sign-check-in', (event, message) => {
+  assertTrustedLicenseSender(event)
   if (typeof message !== 'string' || message.length > 1024) throw new Error('Invalid licensing check-in message')
   const signature = crypto.sign('sha256', Buffer.from(message), readDeviceKey())
   return signature.toString('base64url')
@@ -156,7 +167,7 @@ function createWindow() {
     },
   })
 
-  const appUrl = `http://${HOST}:${PORT}`
+  const appUrl = APP_ORIGIN
   const appOrigin = new URL(appUrl).origin
   window.webContents.setWindowOpenHandler(/** @param {{ url: string }} details */ ({ url }) => {
     openExternal(url)

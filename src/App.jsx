@@ -176,10 +176,37 @@ function DesktopLicenseRoute() {
 function DesktopLicenseGate({ children }) {
   const location = useLocation()
   const { licensed, checking } = useDesktopLicenseStatus()
+  const [connectionBlock, setConnectionBlock] = useState(null)
+  useEffect(() => {
+    const handleConnection = (event) => setConnectionBlock(event.detail?.blocked ? event.detail : null)
+    const clearIfOffline = () => { if (!navigator.onLine) setConnectionBlock(null) }
+    window.addEventListener('tenga:desktop-license-connection', handleConnection)
+    window.addEventListener('offline', clearIfOffline)
+    return () => {
+      window.removeEventListener('tenga:desktop-license-connection', handleConnection)
+      window.removeEventListener('offline', clearIfOffline)
+    }
+  }, [])
   if (!window.tengaDesktop?.isDesktop) return children
   if (checking) return <RouteLoading />
   if (!licensed && location.pathname !== '/desktop-license') return <Navigate to="/desktop-license" replace />
+  if (connectionBlock && location.pathname !== '/desktop-license') {
+    return <DesktopLicenseConnectionBlock message={connectionBlock.message} />
+  }
   return children
+}
+
+function DesktopLicenseConnectionBlock({ message }) {
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-white">
+      <section className="w-full max-w-lg rounded-2xl border border-red-500/30 bg-slate-900 p-7 shadow-2xl">
+        <h1 className="text-xl font-bold">License Manager cannot connect</h1>
+        <p className="mt-3 text-sm text-slate-300">Internet appears available, but tengaPOS could not complete its license check-in. Allow the tengaPOS desktop app outbound HTTPS access to the license service in your firewall, then retry.</p>
+        {message && <p className="mt-3 break-words rounded-lg bg-black/20 p-3 text-xs text-slate-400">{message}</p>}
+        <p className="mt-3 text-xs text-slate-500">If this is a temporary tengaPOS outage or network/DNS problem, the same message may appear. The app will retry automatically. If this computer is actually offline, it continues using its previously verified license.</p>
+      </section>
+    </main>
+  )
 }
 
 const queryClient = new QueryClient({

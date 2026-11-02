@@ -10,6 +10,12 @@ function base64UrlToBytes(value) {
   return Uint8Array.from(atob(padded), (char) => char.charCodeAt(0))
 }
 
+function publishConnectionState(blocked, message = '') {
+  window.dispatchEvent(new CustomEvent('tenga:desktop-license-connection', {
+    detail: { blocked, message },
+  }))
+}
+
 function decodeBase64UrlJson(value) {
   return JSON.parse(new TextDecoder().decode(base64UrlToBytes(value)))
 }
@@ -63,9 +69,11 @@ export async function verifyDesktopLicenseToken(token, expectedDeviceId) {
 
 async function postLicenseRequest(path, payload) {
   if (!API_URL) throw new Error('Desktop license service is not configured in this build')
+  const endpoint = new URL(`${API_URL.replace(/\/$/, '')}/${path}`)
+  if (endpoint.protocol !== 'https:') throw new Error('Desktop licensing requires a secure HTTPS service')
   let response
   try {
-    response = await fetch(`${API_URL.replace(/\/$/, '')}/${path}`, {
+    response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -168,27 +176,28 @@ export function startDesktopLicenseMonitor() {
     if (stopped || !navigator.onLine) return
     try {
       await checkInDesktopLicense()
+      publishConnectionState(false)
     } catch (error) {
       await recordLicenseEvent('check_in_failed', {
         message: String(error?.message || 'License service unreachable'),
       }).catch(() => {})
+      publishConnectionState(navigator.onLine, String(error?.message || 'License service unreachable'))
       if (!stopped) retryTimer = window.setTimeout(checkIn, 60_000)
     }
   }
 
   const onOnline = () => { void checkIn() }
+  const onOffline = () => publishConnectionState(false)
   const onVisibilityChange = () => {
     if (document.visibilityState === 'visible' && navigator.onLine) void checkIn()
   }
   window.addEventListener('online', onOnline)
+  window.addEventListener('offline', onOffline)
   document.addEventListener('visibilitychange', onVisibilityChange)
 
   void readVerifiedDesktopLicense().then(async (license) => {
     if (!license || !navigator.onLine) return
-    const checkedAt = Date.parse(license.checkedAt || '')
-    if (!Number.isFinite(checkedAt) || Date.now() - checkedAt >= 24 * 60 * 60 * 1000) {
-      await checkIn()
-    }
+    await checkIn()
   }).catch(() => {})
 
   const dailyTimer = window.setInterval(() => { void checkIn() }, 24 * 60 * 60 * 1000)
@@ -197,6 +206,7 @@ export function startDesktopLicenseMonitor() {
     window.clearTimeout(retryTimer)
     window.clearInterval(dailyTimer)
     window.removeEventListener('online', onOnline)
+    window.removeEventListener('offline', onOffline)
     document.removeEventListener('visibilitychange', onVisibilityChange)
   }
 }
