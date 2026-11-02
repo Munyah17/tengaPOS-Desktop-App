@@ -50,6 +50,12 @@ db.version(4).stores({
   localCategories: 'id, name, tenant_id, branch_id',
 })
 
+db.version(5).stores({
+  desktopLicense: 'key, device_id, license_id, checked_at, status',
+  desktopLicenseKeys: 'key',
+  desktopLicenseEvents: '++id, created_at, type',
+})
+
 export async function addToSyncQueue(tableName, operation, data) {
   await db.syncQueue.add({
     table_name: tableName,

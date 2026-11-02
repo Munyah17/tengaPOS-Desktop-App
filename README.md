@@ -21,7 +21,7 @@ npm run dev
 
 ## Windows Desktop App
 
-The Electron desktop app supports local shop setup and a standalone, single-terminal local POS flow. It does not currently implement online license activation, license check-ins, or Super Admin desktop license management. A fresh install can currently be set up locally; do not distribute this build as a licensed commercial release until the licensing gate is implemented.
+The Electron desktop app has a fail-closed license gate for first-time use. A device must receive a server-signed, device-bound license before local shop setup is available. The gate expects `VITE_DESKTOP_LICENSE_API_URL` and `VITE_DESKTOP_LICENSE_PUBLIC_KEY` at build time, with `activate` and `check-in` endpoints following the request/response contract in `src/lib/desktopLicense.js`. The online app/backend does not yet provide those endpoints or Super Admin desktop license management, so activation is intentionally unavailable until that service is implemented and deployed.
 
 For development, configure the same `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` environment values used for the web build, then run:
 
@@ -31,7 +31,7 @@ npm run desktop
 
 Create a Windows installer with `npm run desktop:dist`; the installer is written to `release/`. The desktop shell serves the bundled app locally at `http://127.0.0.1:4179`. Installer artifacts are not committed to this source repository.
 
-Desktop shop, catalog, stock, checkout, and transaction history use local IndexedDB storage and are intended for one independent terminal. Online payments and cloud integrations are unavailable in standalone mode. Local data does not automatically sync to another computer, and backup/restore is not yet implemented; protect the computer and back up its data before production use.
+After activation, desktop shop, catalog, stock, checkout, and transaction history use local IndexedDB storage and are intended for one independent terminal. An active locally signed license has no offline expiry; the app attempts a check-in immediately when connectivity returns, retries failures, and checks at least every 24 hours while online. A failed request only identifies the license service as unreachable; a firewall block cannot be distinguished reliably from an outage or DNS/routing issue. License events are stored separately from sales sync. Online payments and cloud integrations are unavailable in standalone mode. Local data does not automatically sync to another computer, and backup/restore is not yet implemented; protect the computer and back up its data before production use.
 
 ## Features
 

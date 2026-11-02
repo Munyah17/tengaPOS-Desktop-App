@@ -1,7 +1,7 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'react-hot-toast'
-import { useEffect, lazy, Suspense } from 'react'
+import { useEffect, useState, lazy, Suspense } from 'react'
 import { useThemeStore } from '@/stores/themeStore'
 import { useAuthStore, NAV_PERMISSIONS } from '@/stores/authStore'
 import AppLayout from '@/components/layout/AppLayout'
@@ -12,6 +12,7 @@ import AdminLayout from '@/components/admin/AdminLayout'
 // of which single page they actually landed on.
 const Landing = lazy(() => import('@/pages/Landing'))
 const DesktopSetup = lazy(() => import('@/pages/DesktopSetup'))
+const DesktopLicensePage = lazy(() => import('@/pages/DesktopLicensePage'))
 const Demo = lazy(() => import('@/pages/Demo'))
 const Login = lazy(() => import('@/pages/Login'))
 const StaffLogin = lazy(() => import('@/pages/StaffLogin'))
@@ -96,25 +97,89 @@ function RouteLoading() {
 }
 
 function DesktopEntry() {
-  const { isLoading, desktopSetupComplete } = useAuthStore()
+  const { isLoading } = useAuthStore()
   if (!window.tengaDesktop?.isDesktop) return <Landing />
   if (isLoading) return <RouteLoading />
-  return <Navigate to={desktopSetupComplete ? '/login' : '/setup'} replace />
+  return <Navigate to="/desktop-license" replace />
 }
 
 function DesktopLogin() {
   const { isLoading, desktopSetupComplete } = useAuthStore()
+  const { licensed, checking } = useDesktopLicenseStatus()
   if (window.tengaDesktop?.isDesktop && isLoading) return <RouteLoading />
+  if (window.tengaDesktop?.isDesktop && checking) return <RouteLoading />
+  if (window.tengaDesktop?.isDesktop && !licensed) return <Navigate to="/desktop-license" replace />
   if (window.tengaDesktop?.isDesktop && !desktopSetupComplete) return <Navigate to="/setup" replace />
   return <Login />
 }
 
 function DesktopSetupRoute() {
   const { isLoading, desktopSetupComplete } = useAuthStore()
+  const { licensed, checking } = useDesktopLicenseStatus()
   if (!window.tengaDesktop?.isDesktop) return <Navigate to="/" replace />
-  if (isLoading) return <RouteLoading />
+  if (isLoading || checking) return <RouteLoading />
+  if (!licensed) return <Navigate to="/desktop-license" replace />
   if (desktopSetupComplete) return <Navigate to="/login" replace />
   return <DesktopSetup />
+}
+
+function useDesktopLicenseStatus() {
+  const [licensed, setLicensed] = useState(false)
+  const [checking, setChecking] = useState(true)
+  useEffect(() => {
+    let active = true
+    let readLicense
+    const refresh = () => {
+      if (!readLicense) return
+      readLicense().then((license) => {
+        if (active) { setLicensed(!!license); setChecking(false) }
+      }).catch(() => {
+        if (active) { setLicensed(false); setChecking(false) }
+      })
+    }
+    import('@/lib/desktopLicense').then(({ readVerifiedDesktopLicense }) => {
+      readLicense = readVerifiedDesktopLicense
+      refresh()
+    })
+    window.addEventListener('tenga:desktop-license-updated', refresh)
+    window.addEventListener('online', refresh)
+    return () => {
+      active = false
+      window.removeEventListener('tenga:desktop-license-updated', refresh)
+      window.removeEventListener('online', refresh)
+    }
+  }, [])
+  return { licensed, checking }
+}
+
+function DesktopLicenseRoute() {
+  const { isLoading } = useAuthStore()
+  const [licensed, setLicensed] = useState(false)
+  const [checking, setChecking] = useState(true)
+  useEffect(() => {
+    let active = true
+    import('@/lib/desktopLicense').then(({ readVerifiedDesktopLicense }) =>
+      readVerifiedDesktopLicense().then((license) => {
+        if (active) { setLicensed(!!license); setChecking(false) }
+      }).catch(() => {
+        if (active) { setLicensed(false); setChecking(false) }
+      })
+    )
+    return () => { active = false }
+  }, [])
+  if (!window.tengaDesktop?.isDesktop) return <Navigate to="/" replace />
+  if (isLoading || checking) return <RouteLoading />
+  if (licensed) return <Navigate to={useAuthStore.getState().desktopSetupComplete ? '/login' : '/setup'} replace />
+  return <DesktopLicensePage />
+}
+
+function DesktopLicenseGate({ children }) {
+  const location = useLocation()
+  const { licensed, checking } = useDesktopLicenseStatus()
+  if (!window.tengaDesktop?.isDesktop) return children
+  if (checking) return <RouteLoading />
+  if (!licensed && location.pathname !== '/desktop-license') return <Navigate to="/desktop-license" replace />
+  return children
 }
 
 const queryClient = new QueryClient({
@@ -128,6 +193,9 @@ const queryClient = new QueryClient({
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, userType, tenantStatus, tenant } = useAuthStore()
+  const { licensed, checking } = useDesktopLicenseStatus()
+  if (window.tengaDesktop?.isDesktop && checking) return <RouteLoading />
+  if (window.tengaDesktop?.isDesktop && !licensed) return <Navigate to="/desktop-license" replace />
   if (!isAuthenticated) return <Navigate to="/login" replace />
   if (userType === 'app_owner') return <Navigate to="/admin/dashboard" replace />
   // 7-day trial is opt-in: fresh signups (no trial, no plan) choose on /checkout;
@@ -221,15 +289,24 @@ export default function App() {
   useEffect(() => {
     initTheme()
     initAuth()
+    if (window.tengaDesktop?.isDesktop) {
+      let cleanup
+      import('@/lib/desktopLicense').then(({ startDesktopLicenseMonitor }) => {
+        cleanup = startDesktopLicenseMonitor()
+      })
+      return () => cleanup?.()
+    }
   }, [initTheme, initAuth])
 
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
+        <DesktopLicenseGate>
         <Suspense fallback={<RouteLoading />}>
         <Routes>
           <Route path="/" element={<DesktopEntry />} />
           <Route path="/setup" element={<DesktopSetupRoute />} />
+          <Route path="/desktop-license" element={<DesktopLicenseRoute />} />
           <Route path="/demo" element={<Demo />} />
           <Route path="/login" element={<DesktopLogin />} />
           {/* Staff sign-in — separate from client /login. /super-admin is
@@ -358,6 +435,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         </Suspense>
+        </DesktopLicenseGate>
       </BrowserRouter>
       <Toaster
         position="top-right"

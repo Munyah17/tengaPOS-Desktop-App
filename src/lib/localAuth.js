@@ -1,5 +1,6 @@
 import { db } from '@/db'
 import { generateUUID } from '@/lib/uuid'
+import { readVerifiedDesktopLicense } from '@/lib/desktopLicense'
 
 const PASSWORD_ITERATIONS = 310000
 const encoder = new TextEncoder()
@@ -41,7 +42,10 @@ export async function createLocalInstallation({ shopName, ownerName, username, p
   if (existing) throw new Error('This computer has already been set up')
   if (!globalThis.crypto?.subtle) throw new Error('Secure local password storage is unavailable on this computer')
 
-  const shopId = generateUUID()
+  const license = await readVerifiedDesktopLicense()
+  if (!license) throw new Error('A valid online-confirmed desktop license is required before setup')
+
+  const shopId = license.claims.tenant_id
   const branchId = generateUUID()
   const userId = generateUUID()
   const salt = globalThis.crypto.getRandomValues(new Uint8Array(16))
@@ -50,7 +54,7 @@ export async function createLocalInstallation({ shopName, ownerName, username, p
   const shop = {
     id: shopId,
     name: shopName.trim(),
-    currency,
+    currency: license.claims.currency || currency,
     pos_mode: 'retail',
     enabled_modes: ['retail'],
     vat_enabled: false,
@@ -59,6 +63,7 @@ export async function createLocalInstallation({ shopName, ownerName, username, p
     plan_type: 'local_desktop',
     features: {},
     created_at: now,
+    license_id: license.claims.license_id,
   }
   const branch = { id: branchId, tenant_id: shopId, name: 'Main', is_active: true, created_at: now }
   const user = {

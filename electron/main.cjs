@@ -1,6 +1,7 @@
 /** @type {typeof import('electron')} */
 const electron = require('electron')
 const { app, BrowserWindow, shell, dialog } = electron
+const { ipcMain, safeStorage } = electron
 /** @type {typeof import('node:http')} */
 const http = require('node:http')
 const { createServer } = http
@@ -9,6 +10,7 @@ const fs = require('node:fs/promises')
 const { readFile, stat } = fs
 /** @type {typeof import('node:path')} */
 const path = require('node:path')
+const crypto = require('node:crypto')
 
 const HOST = '127.0.0.1'
 const PORT = 4179
@@ -32,6 +34,46 @@ const CONTENT_TYPES = /** @type {Record<string, string>} */ ({
 
 /** @type {import('node:http').Server | undefined} */
 let server
+const LICENSE_DEVICE_KEY = 'desktop-license-device-key'
+
+function readDeviceKey() {
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error('Windows secure storage is unavailable; license device protection cannot start.')
+  }
+  const keyPath = path.join(app.getPath('userData'), 'license-device-key.bin')
+  try {
+    const encrypted = require('node:fs').readFileSync(keyPath)
+    return crypto.createPrivateKey(safeStorage.decryptString(encrypted))
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+  }
+
+  const pair = crypto.generateKeyPairSync('ec', {
+    namedCurve: 'prime256v1',
+    publicKeyEncoding: { type: 'spki', format: 'der' },
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+  })
+  const privateKey = crypto.createPrivateKey(pair.privateKey)
+  const encrypted = safeStorage.encryptString(pair.privateKey)
+  require('node:fs').writeFileSync(keyPath, encrypted, { mode: 0o600, flag: 'wx' })
+  return privateKey
+}
+
+function getLicenseDeviceIdentity() {
+  const privateKey = readDeviceKey()
+  const publicKey = crypto.createPublicKey(privateKey)
+  const publicJwk = publicKey.export({ format: 'jwk' })
+  const canonical = JSON.stringify({ crv: publicJwk.crv, kty: publicJwk.kty, x: publicJwk.x, y: publicJwk.y })
+  const deviceId = crypto.createHash('sha256').update(canonical).digest('base64url')
+  return { deviceId, publicKey: publicJwk }
+}
+
+ipcMain.handle('license:get-device-identity', () => getLicenseDeviceIdentity())
+ipcMain.handle('license:sign-check-in', (_event, message) => {
+  if (typeof message !== 'string' || message.length > 1024) throw new Error('Invalid licensing check-in message')
+  const signature = crypto.sign('sha256', Buffer.from(message), readDeviceKey())
+  return signature.toString('base64url')
+})
 
 /** @returns {Promise<void>} */
 function startLocalServer() {
