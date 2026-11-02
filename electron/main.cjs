@@ -10,6 +10,7 @@ const fs = require('node:fs/promises')
 const { readFile, stat } = fs
 /** @type {typeof import('node:path')} */
 const path = require('node:path')
+const os = require('node:os')
 const crypto = require('node:crypto')
 
 const HOST = '127.0.0.1'
@@ -50,29 +51,55 @@ function readDeviceKey() {
   const keyPath = path.join(app.getPath('userData'), 'license-device-key.bin')
   try {
     const encrypted = require('node:fs').readFileSync(keyPath)
-    return crypto.createPrivateKey(safeStorage.decryptString(encrypted))
+    const key = crypto.createPrivateKey(safeStorage.decryptString(encrypted))
+    // Pre-v1 builds used P-256 — the server verifies Ed25519 only, so
+    // regenerate instead of handing back a key that can never authenticate.
+    if (key.asymmetricKeyType === 'ed25519') return key
+    require('node:fs').unlinkSync(keyPath)
   } catch (error) {
     if (error.code !== 'ENOENT') throw error
   }
 
-  const pair = crypto.generateKeyPairSync('ec', {
-    namedCurve: 'prime256v1',
+  const pair = crypto.generateKeyPairSync('ed25519', {
     publicKeyEncoding: { type: 'spki', format: 'der' },
     privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
   })
   const privateKey = crypto.createPrivateKey(pair.privateKey)
   const encrypted = safeStorage.encryptString(pair.privateKey)
-  require('node:fs').writeFileSync(keyPath, encrypted, { mode: 0o600, flag: 'wx' })
+  require('node:fs').writeFileSync(keyPath, encrypted, { mode: 0o600 })
   return privateKey
 }
 
+// Contract §1: device_public_key = base64 raw 32-byte Ed25519 key.
+// The DER SPKI wrapper for Ed25519 always prefixes the same 12 bytes,
+// so the raw key is the last 32 bytes of the DER encoding.
+function devicePublicKeyB64() {
+  const der = crypto.createPublicKey(readDeviceKey()).export({ type: 'spki', format: 'der' })
+  return Buffer.from(der).subarray(-32).toString('base64')
+}
+
+// Stable per-install fingerprint (contract §2.2/§2.3): sha256 of a random
+// install id generated once at first launch. Used for clone detection —
+// copied license files land on a machine with a different install id.
+function readInstallFingerprint() {
+  const fpPath = path.join(app.getPath('userData'), 'license-install-id')
+  const syncFs = require('node:fs')
+  try {
+    return crypto.createHash('sha256').update(syncFs.readFileSync(fpPath, 'utf8').trim()).digest('hex')
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+  }
+  const installId = crypto.randomUUID()
+  syncFs.writeFileSync(fpPath, installId, { mode: 0o600 })
+  return crypto.createHash('sha256').update(installId).digest('hex')
+}
+
 function getLicenseDeviceIdentity() {
-  const privateKey = readDeviceKey()
-  const publicKey = crypto.createPublicKey(privateKey)
-  const publicJwk = publicKey.export({ format: 'jwk' })
-  const canonical = JSON.stringify({ crv: publicJwk.crv, kty: publicJwk.kty, x: publicJwk.x, y: publicJwk.y })
-  const deviceId = crypto.createHash('sha256').update(canonical).digest('base64url')
-  return { deviceId, publicKey: publicJwk }
+  return {
+    devicePublicKey: devicePublicKeyB64(),
+    deviceFingerprint: readInstallFingerprint(),
+    deviceName: os.hostname(),
+  }
 }
 
 ipcMain.handle('license:get-device-identity', (event) => {
@@ -82,8 +109,10 @@ ipcMain.handle('license:get-device-identity', (event) => {
 ipcMain.handle('license:sign-check-in', (event, message) => {
   assertTrustedLicenseSender(event)
   if (typeof message !== 'string' || message.length > 1024) throw new Error('Invalid licensing check-in message')
-  const signature = crypto.sign('sha256', Buffer.from(message), readDeviceKey())
-  return signature.toString('base64url')
+  // Ed25519 signs raw bytes — algorithm must be null. Base64 (not b64url):
+  // the server decodes with standard atob (contract §1).
+  const signature = crypto.sign(null, Buffer.from(message), readDeviceKey())
+  return signature.toString('base64')
 })
 
 /** @returns {Promise<void>} */
