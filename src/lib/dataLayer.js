@@ -1,5 +1,6 @@
 import * as realDb from '@/lib/db'
 import * as demoDb from '@/lib/demoDb'
+import * as localDb from '@/lib/localDb'
 import { isDemoRoute } from '@/lib/demoMode'
 
 // Single indirection point the 7 core-flow pages (Dashboard, POS, Inventory,
@@ -14,7 +15,15 @@ import { isDemoRoute } from '@/lib/demoMode'
 export { isDemoRoute }
 
 function pick(name) {
-  return (...args) => (isDemoRoute() ? demoDb[name] : realDb[name])(...args)
+  return (...args) => {
+    if (isDemoRoute()) return demoDb[name](...args)
+    if (window.tengaDesktop?.isDesktop) {
+      const localOperation = localDb[name]
+      if (localOperation) return localOperation(...args)
+      return Promise.reject(new Error(`${name} is not available in standalone offline mode`))
+    }
+    return realDb[name](...args)
+  }
 }
 
 export const fetchProducts = pick('fetchProducts')

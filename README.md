@@ -19,6 +19,20 @@ npm install
 npm run dev
 ```
 
+## Windows Desktop App
+
+The Electron desktop app supports local shop setup and a standalone, single-terminal local POS flow. It does not currently implement online license activation, license check-ins, or Super Admin desktop license management. A fresh install can currently be set up locally; do not distribute this build as a licensed commercial release until the licensing gate is implemented.
+
+For development, configure the same `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` environment values used for the web build, then run:
+
+```bash
+npm run desktop
+```
+
+Create a Windows installer with `npm run desktop:dist`; the installer is written to `release/`. The desktop shell serves the bundled app locally at `http://127.0.0.1:4179`. Installer artifacts are not committed to this source repository.
+
+Desktop shop, catalog, stock, checkout, and transaction history use local IndexedDB storage and are intended for one independent terminal. Online payments and cloud integrations are unavailable in standalone mode. Local data does not automatically sync to another computer, and backup/restore is not yet implemented; protect the computer and back up its data before production use.
+
 ## Features
 
 - **Dual POS Modes:** Retail (blue) + Restaurant (green) with theme switching

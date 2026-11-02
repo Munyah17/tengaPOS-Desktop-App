@@ -32,6 +32,10 @@ export function useTenantNotifications({ tenantId, posMode, role, userId, limit 
   const [notifications, setNotifications] = useState([])
 
   const load = useCallback(async () => {
+    if (window.tengaDesktop?.isDesktop) {
+      setNotifications([])
+      return
+    }
     if (!tenantId) return
     const readIds = getReadIds()
     const includeAnnouncements = !ANNOUNCEMENTS_HIDDEN_FOR.includes(role)

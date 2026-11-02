@@ -78,7 +78,9 @@ export default function Sidebar({ open = false, onClose }) {
   const isBar = posMode === 'bar'
   const isHardware = posMode === 'hardware'
 
-  const allowedKeys = NAV_PERMISSIONS[role] || NAV_PERMISSIONS.vendor
+  const allowedKeys = window.tengaDesktop?.isDesktop
+    ? ['pos', 'inventory', 'transactions']
+    : NAV_PERMISSIONS[role] || NAV_PERMISSIONS.vendor
   const visibleItems = ALL_NAV_ITEMS.map((item) => {
     if (!item.children) return item
     const children = item.children.filter((c) => allowedKeys.includes(c.key))

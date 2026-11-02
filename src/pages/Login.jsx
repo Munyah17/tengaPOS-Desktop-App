@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
 
 export default function Login() {
+  const isDesktop = window.tengaDesktop?.isDesktop === true
   const [email, setEmail] = useState('')
   const [usernameEmail, setUsernameEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -37,7 +38,7 @@ export default function Login() {
     }
   }
 
-  const isUsernameMode = email.trim() && !email.includes('@')
+  const isUsernameMode = !isDesktop && email.trim() && !email.includes('@')
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -55,7 +56,7 @@ export default function Login() {
       toast.success('Welcome back!')
       const store = useAuthStore.getState()
       const status = store.tenantStatus
-      navigate(status === 'pending' || status === 'suspended' ? '/pending' : '/app/dashboard')
+      navigate(isDesktop ? '/app/pos' : status === 'pending' || status === 'suspended' ? '/pending' : '/app/dashboard')
     } catch (err) {
       toast.error(err.message || 'Sign in failed')
     } finally {
@@ -79,13 +80,15 @@ export default function Login() {
       >
         <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-8 shadow-2xl backdrop-blur-xl">
           {/* Back to home */}
-          <Link
-            to="/"
-            className="mb-6 inline-flex items-center gap-1.5 text-sm text-slate-400 transition-colors hover:text-white"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back to home
-          </Link>
+          {!isDesktop && (
+            <Link
+              to="/"
+              className="mb-6 inline-flex items-center gap-1.5 text-sm text-slate-400 transition-colors hover:text-white"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back to home
+            </Link>
+          )}
 
           {/* Logo */}
           <div className="mb-8 text-center">
@@ -134,7 +137,7 @@ export default function Login() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-300">Email or Username</label>
+              <label className="mb-1.5 block text-sm font-medium text-slate-300">{isDesktop ? 'Username' : 'Email or Username'}</label>
               <input
                 type="text"
                 autoCapitalize="none"
@@ -142,7 +145,7 @@ export default function Login() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-slate-500 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-                placeholder="you@example.com or username"
+                placeholder={isDesktop ? 'username' : 'you@example.com or username'}
               />
             </div>
 
@@ -185,7 +188,7 @@ export default function Login() {
               </div>
             </div>
 
-            <div className="flex items-center justify-between">
+            {!isDesktop && <div className="flex items-center justify-between">
               <label className="flex items-center gap-2 text-sm text-slate-400">
                 <input type="checkbox" className="rounded border-slate-600" />
                 Remember me
@@ -193,7 +196,7 @@ export default function Login() {
               <button type="button" onClick={() => { setResetMode(true); setResetEmail(email) }} className="text-sm text-brand-400 hover:text-brand-300">
                 Forgot password?
               </button>
-            </div>
+            </div>}
 
             <button
               type="submit"
@@ -206,12 +209,12 @@ export default function Login() {
           </form>
           )} {/* end !resetMode */}
 
-          <p className="mt-6 text-center text-sm text-slate-400">
+          {!isDesktop && <p className="mt-6 text-center text-sm text-slate-400">
             {"Don't have an account? "}
             <Link to="/register" className="font-medium text-brand-400 hover:text-brand-300">
               Get started
             </Link>
-          </p>
+          </p>}
         </div>
       </motion.div>
     </div>

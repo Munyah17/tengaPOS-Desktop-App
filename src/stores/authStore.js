@@ -3,6 +3,9 @@ import { persist } from 'zustand/middleware'
 import { supabase } from '@/lib/supabase'
 import { isStaleJwtError, refreshSessionOnce } from '@/lib/authRetry'
 import { isDemoRoute, setDemoActive, DEMO_ROLE_SESSION_KEY } from '@/lib/demoMode'
+import { authenticateLocalUser, getLocalInstallation } from '@/lib/localAuth'
+
+const isDesktopApp = () => typeof window !== 'undefined' && window.tengaDesktop?.isDesktop === true
 
 // On a weak/slow connection, signInWithPassword could otherwise hang for a
 // very long time with no feedback (the browser's own fetch timeout, if any,
@@ -85,10 +88,33 @@ export const useAuthStore = create(
       branch: null,
       userType: null,
       tenantStatus: null,
+      desktopSetupComplete: false,
       isAuthenticated: false,
       isLoading: true,
 
       initAuth: async () => {
+        if (isDesktopApp()) {
+          set({ isLoading: true })
+          try {
+            const installation = await getLocalInstallation()
+            set({
+              user: null,
+              session: null,
+              profile: null,
+              tenant: installation?.shop || null,
+              role: null,
+              branch: installation?.branch || null,
+              userType: null,
+              tenantStatus: installation ? 'active' : null,
+              desktopSetupComplete: !!installation,
+              isAuthenticated: false,
+              isLoading: false,
+            })
+          } catch {
+            set({ desktopSetupComplete: false, isAuthenticated: false, isLoading: false })
+          }
+          return
+        }
         // A page refresh while inside the demo sandbox would otherwise
         // fall straight through to the real-session check below, find
         // nothing, and bounce the visitor to /login -- this restores the
@@ -190,6 +216,29 @@ export const useAuthStore = create(
       // (Login.jsx collects the email alongside it whenever the typed
       // identifier isn't already email-shaped).
       signIn: async (identifier, password, usernameEmail) => {
+        if (isDesktopApp()) {
+          set({ isLoading: true })
+          try {
+            const local = await authenticateLocalUser(identifier, password)
+            set({
+              user: local.user,
+              session: null,
+              profile: local.profile,
+              tenant: local.tenant,
+              role: local.role,
+              branch: local.branch,
+              userType: local.userType,
+              tenantStatus: local.tenantStatus,
+              desktopSetupComplete: true,
+              isAuthenticated: true,
+              isLoading: false,
+            })
+            return local.userType
+          } catch (error) {
+            set({ isLoading: false })
+            throw error
+          }
+        }
         // A real credential login always ends any demo session -- otherwise
         // a visitor who tried /demo earlier in this tab and then logs in
         // for real would have their genuine session silently skipped by
@@ -356,6 +405,17 @@ export const useAuthStore = create(
       },
 
       clearAuth: async () => {
+        if (isDesktopApp()) {
+          set({
+            user: null,
+            session: null,
+            profile: null,
+            role: null,
+            isAuthenticated: false,
+            isLoading: false,
+          })
+          return
+        }
         // scope: 'local' only ever clears THIS tab/device's own copy of
         // the session -- never revokes the underlying refresh token
         // server-side. validateSession() below is the main caller of this
@@ -387,6 +447,7 @@ export const useAuthStore = create(
       // network failure, and never for email/profile changes (those are
       // routine admin actions with their own handling).
       validateSession: async () => {
+        if (isDesktopApp()) return
         if (!navigator.onLine) return
         const cached = get()
         if (!cached.isAuthenticated || !cached.user) return
@@ -460,6 +521,7 @@ export const useAuthStore = create(
       // simply skips the write; whatever a real session last persisted
       // stays exactly as it was for the next real page load.
       partialize: (state) => (isDemoRoute() ? {} : {
+        ...(isDesktopApp() ? {} : {
         user: state.user,
         profile: state.profile,
         tenant: state.tenant,
@@ -468,6 +530,7 @@ export const useAuthStore = create(
         userType: state.userType,
         isAuthenticated: state.isAuthenticated,
         tenantStatus: state.tenantStatus,
+        }),
       }),
     }
   )

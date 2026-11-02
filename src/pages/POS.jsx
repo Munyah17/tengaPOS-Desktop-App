@@ -81,6 +81,7 @@ function CartQtyField({ item, onCommit }) {
 }
 
 export default function POS() {
+  const isDesktop = window.tengaDesktop?.isDesktop === true
   const { posMode } = useThemeStore()
   const { tenant, user, branch, role } = useAuthStore()
   const receiptConfig = useReceiptConfigStore()
@@ -137,9 +138,9 @@ export default function POS() {
   const [filedPrescriptions, setFiledPrescriptions] = useState([])
   const [linkedPrescription, setLinkedPrescription] = useState(null)
   useEffect(() => {
-    if (!showPrescriptionModal || isDemoRoute() || !tenant?.id) return
+    if (!showPrescriptionModal || isDemoRoute() || isDesktop || !tenant?.id) return
     fetchPrescriptions(tenant.id).then((rows) => setFiledPrescriptions(rows.filter((p) => p.status === 'active'))).catch(() => {})
-  }, [showPrescriptionModal, tenant?.id])
+  }, [showPrescriptionModal, tenant?.id, isDesktop])
   // Bar/Liquor Store Mode: same data-driven pattern as pharmacyItems above.
   const [showAgeVerifyModal, setShowAgeVerifyModal] = useState(false)
   const [ageVerifyForm, setAgeVerifyForm] = useState({ verified: false, idType: '', idLast4: '' })
@@ -306,6 +307,9 @@ export default function POS() {
 
   // Mobile-money methods run through Paynow's hosted checkout, never manually
   const PAYNOW_METHODS = ['ecocash', 'innbucks', 'omari', 'onemoney', 'zipit']
+  const availablePaymentMethods = isDesktop
+    ? PAYMENT_METHODS.filter((method) => ['cash', 'pos_terminal'].includes(method.id))
+    : PAYMENT_METHODS.slice(0, 6)
   const tenderedAmount = parseFloat(amountTendered) || 0
   const changeDue = Math.max(0, tenderedAmount - cart.getGrandTotal())
   const cashShortfall = cart.paymentMethod === 'cash' && amountTendered !== '' && tenderedAmount < cart.getGrandTotal()
@@ -382,7 +386,7 @@ export default function POS() {
     // into their own account a second time mid-checkout to approve their
     // own discount is pure friction with no actual control behind it.
     // process_checkout enforces this same exemption server-side.
-    if (!isDemoRoute() && role !== 'vendor' && cart.getEffectiveDiscountPct() > 10 && !cart.discountAuthId) {
+    if (!isDesktop && !isDemoRoute() && role !== 'vendor' && cart.getEffectiveDiscountPct() > 10 && !cart.discountAuthId) {
       setShowDiscountAuthModal(true)
       return
     }
@@ -521,6 +525,10 @@ export default function POS() {
             return line ? { ...p, stock: Math.max(0, (p.stock ?? 0) - line.quantity) } : p
           })
         )
+        if (window.tengaDesktop?.isDesktop) {
+          queryClient.invalidateQueries({ queryKey: ['transactions', tenant.id] })
+          queryClient.invalidateQueries({ queryKey: ['orders', tenant.id] })
+        }
         // Cash sale, drawer needs to open -- best-effort, same reasoning
         // as the No-Sale kick: plenty of tills have no drawer wired up at
         // all, and that's completely normal, not something to surface as
@@ -554,7 +562,7 @@ export default function POS() {
       }
 
       // Submit to ZIMRA FDMS if fiscal day is open
-      if (fiscal.isEnabled && fiscal.isRegistered && fiscal.fiscalDayStatus === 'open') {
+      if (!isDesktop && fiscal.isEnabled && fiscal.isRegistered && fiscal.fiscalDayStatus === 'open') {
         try {
           const { data: fdmsData, error: fdmsErr } = await supabase.functions.invoke(
             'zimra-submit-receipt',
@@ -595,7 +603,7 @@ export default function POS() {
     // repeat customers deepen one record instead of duplicating. Purely
     // best-effort like the compliance logs below: the sale itself already
     // succeeded, so a failure here is never a checkout error.
-    if (customerDetails?.name && tenant?.id) {
+    if (!isDesktop && customerDetails?.name && tenant?.id) {
       findOrCreateCustomer(tenant.id, {
         name: customerDetails.name,
         phone: customerDetails.phone,
@@ -613,7 +621,7 @@ export default function POS() {
     // Job card -> POS checkout loop: this sale came from "Complete & Issue
     // Receipt" on a job card (JobCards.jsx), so stamp that job card
     // completed and link it to the order that was just created.
-    if (cart.sourceJobCardId && completedOrderId) {
+    if (!isDesktop && cart.sourceJobCardId && completedOrderId) {
       // Payment is already taken at this point -- a failure here must never
       // look like nothing happened. Previously swallowed silently, which
       // was indistinguishable from success: the sale completed but the job
@@ -631,7 +639,7 @@ export default function POS() {
     // like the transaction failed, but it also shouldn't be silent —
     // missing a controlled-substance compliance record is a real problem
     // someone needs to know about and fix (e.g. re-enter it manually).
-    if (pharmacyItems.length > 0 && completedOrderId) {
+    if (!isDesktop && pharmacyItems.length > 0 && completedOrderId) {
       for (const item of pharmacyItems) {
         recordPrescriptionDispense(tenant.id, {
           branchId: branch?.id || null,
@@ -656,7 +664,7 @@ export default function POS() {
 
     // Bar/Liquor Store Mode compliance log — same best-effort, never-silent
     // treatment as the prescription log above.
-    if (barItems.length > 0 && completedOrderId) {
+    if (!isDesktop && barItems.length > 0 && completedOrderId) {
       for (const item of barItems) {
         recordAgeVerification(tenant.id, {
           branchId: branch?.id || null,
@@ -710,6 +718,10 @@ export default function POS() {
   }
 
   const handlePaynowCheckout = async () => {
+    if (isDesktop) {
+      toast.error('Online payment is unavailable in standalone desktop mode')
+      return
+    }
     if (cart.items.length === 0) { toast.error('Cart is empty'); return }
     if (!tenant?.id) { toast.error('Not authenticated'); return }
 
@@ -783,7 +795,7 @@ export default function POS() {
               <Camera className="h-4 w-4" />
               Scan
             </button>
-            {!isDemoRoute() && (
+            {!isDemoRoute() && !isDesktop && (
               <button
                 onClick={() => setShowNoSaleModal(true)}
                 title="Open the drawer without a sale (making change, till float) — logged for review"
@@ -796,7 +808,7 @@ export default function POS() {
             {/* SOS — deliberately unobtrusive, not a big red alarm button:
                 a duress alert only works if pressing it doesn't visibly
                 announce itself either. See handleSos's own comment. */}
-            {!isDemoRoute() && (
+            {!isDemoRoute() && !isDesktop && (
               <button
                 onClick={handleSos}
                 title="Silent alert"
@@ -1137,7 +1149,7 @@ export default function POS() {
 
           <h4 className="mb-1.5 text-xs font-semibold uppercase text-slate-500">Payment Method</h4>
           <div className="grid grid-cols-3 gap-1.5">
-            {PAYMENT_METHODS.slice(0, 6).map((method) => (
+            {availablePaymentMethods.map((method) => (
               <button
                 key={method.id}
                 onClick={() => cart.setPaymentMethod(method.id)}
@@ -1372,7 +1384,7 @@ export default function POS() {
           </Button>
 
           {/* Paynow hosted checkout — redirects to Paynow, returns to /payment/return */}
-          <button
+          {!isDesktop && <button
             onClick={handlePaynowCheckout}
             disabled={cart.items.length === 0 || paynowLoading}
             className="mt-1.5 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-[#f7941d] bg-white py-2.5 text-sm font-bold text-[#f7941d] transition-colors hover:bg-[#f7941d] hover:text-white disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-900 dark:hover:bg-[#f7941d] dark:hover:text-white"
@@ -1381,10 +1393,10 @@ export default function POS() {
               ? <RefreshCw className="h-4 w-4 animate-spin" />
               : <ExternalLink className="h-4 w-4" />}
             {paynowLoading ? 'Opening Paynow…' : 'Pay with Paynow'}
-          </button>
-          <p className="mt-1 text-center text-[10px] text-slate-400">
+          </button>}
+          {!isDesktop && <p className="mt-1 text-center text-[10px] text-slate-400">
             EcoCash · OneMoney · InnBucks · Omari and more
-          </p>
+          </p>}
         </div>
       </div>
 

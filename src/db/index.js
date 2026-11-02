@@ -28,6 +28,28 @@ db.version(2).stores({
   if (item.failed === undefined) item.failed = 0
 }))
 
+db.version(3).stores({
+  products: '++id, sku, barcode, name, category, tenant_id, branch_id, [tenant_id+branch_id]',
+  transactions: '++id, receipt_number, tenant_id, branch_id, order_id, payment_method, created_at, synced, [tenant_id+synced]',
+  transactionItems: '++id, transaction_id, product_id, tenant_id',
+  categories: '++id, name, tenant_id, branch_id',
+  customers: '++id, name, phone, tenant_id',
+  syncQueue: '++id, table_name, operation, data, created_at, retries, failed',
+  settings: 'key',
+  localShop: 'id, name',
+  localUsers: 'id, &username, email, role, is_active',
+  localBranches: 'id, tenant_id, name',
+  orders: 'id, tenant_id, branch_id, created_at, status, type, pos_mode, receipt_no, &client_ref',
+  orderItems: 'id, order_id, product_id, tenant_id',
+  payments: 'id, order_id, tenant_id, created_at, method',
+  stockMovements: 'id, product_id, tenant_id, created_at, kind',
+})
+
+db.version(4).stores({
+  localProducts: 'id, sku, barcode, name, category_id, tenant_id, branch_id, [tenant_id+branch_id]',
+  localCategories: 'id, name, tenant_id, branch_id',
+})
+
 export async function addToSyncQueue(tableName, operation, data) {
   await db.syncQueue.add({
     table_name: tableName,

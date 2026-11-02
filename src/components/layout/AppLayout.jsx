@@ -76,6 +76,10 @@ export default function AppLayout() {
   useEffect(() => {
     if (!tenant?.id) return
     const scopeKey = `${tenant.id}:${branch?.id || ''}`
+    if (window.tengaDesktop?.isDesktop) {
+      useReceiptConfigStore.getState().loadFromDB({ store_name: tenant.name }, scopeKey)
+      return
+    }
     const loadReceiptConfig = () => loadWithOfflineCache(
       ['effectiveReceiptConfig', tenant.id, branch?.id],
       () => fetchEffectiveReceiptConfig(tenant.id, branch?.id || null),
@@ -91,7 +95,7 @@ export default function AppLayout() {
   // an empty fiscal store (no branch branding fallback, no FDMS submission).
   // Same cache key the Fiscalisation page uses, so they share one copy.
   useEffect(() => {
-    if (!tenant?.id) return
+    if (!tenant?.id || window.tengaDesktop?.isDesktop) return
     const loadFiscalConfig = () => loadWithOfflineCache(
       ['fiscalConfig', tenant.id],
       () => supabase.from('tenant_fiscal_configs')
@@ -146,7 +150,7 @@ export default function AppLayout() {
   // (non-reloading) refresh RefreshOnlineButton does: fire the shared
   // force-refresh event and invalidate every mounted React Query query.
   useEffect(() => {
-    if (!tenant?.id || isDemoRoute()) return
+    if (!tenant?.id || isDemoRoute() || window.tengaDesktop?.isDesktop) return
     return startBackgroundSync(tenant.id, {
       onSynced: ({ synced }) => {
         toast.success(`Synced ${synced} offline sale${synced !== 1 ? 's' : ''}`)
@@ -171,7 +175,7 @@ export default function AppLayout() {
   // minutes. Locks the account only on a genuine identity mismatch; a
   // network hiccup here does nothing (see validateSession).
   useEffect(() => {
-    if (isDemoRoute()) return
+    if (isDemoRoute() || window.tengaDesktop?.isDesktop) return
     const tick = () => useAuthStore.getState().validateSession()
     tick()
     const interval = setInterval(tick, 5 * 60 * 1000)
@@ -187,7 +191,7 @@ export default function AppLayout() {
   // firing) — without this, the trial banner and gated features would stay
   // stuck on stale data until the user manually logs out and back in.
   useEffect(() => {
-    if (!tenant?.id || isDemoRoute()) return
+    if (!tenant?.id || isDemoRoute() || window.tengaDesktop?.isDesktop) return
     const channel = supabase
       .channel(`tenant-live-${tenant.id}`)
       .on('postgres_changes', {
@@ -213,7 +217,7 @@ export default function AppLayout() {
   // on this tenant's products refreshes every open tab within moments,
   // on every device, same pattern as the tenant-live channel above.
   useEffect(() => {
-    if (!tenant?.id || isDemoRoute()) return
+    if (!tenant?.id || isDemoRoute() || window.tengaDesktop?.isDesktop) return
     const channel = supabase
       .channel(`products-live-${tenant.id}`)
       .on('postgres_changes', {

@@ -155,7 +155,7 @@ export default function TopBar({ onMenuClick }) {
 
         {/* Pending offline sync count — reassurance that queued work hasn't been lost.
             Clickable: opens the same manager as the failed-items badge below. */}
-        {pendingSync > 0 && (
+        {!window.tengaDesktop?.isDesktop && pendingSync > 0 && (
           <button
             onClick={() => setShowSyncManager(true)}
             title={`${pendingSync} item${pendingSync !== 1 ? 's' : ''} saved offline, waiting to sync — click to view`}
@@ -169,7 +169,7 @@ export default function TopBar({ onMenuClick }) {
         {/* Permanently-failed offline items — retrying can't fix these on its
             own (e.g. no longer enough stock), so they need a person to look
             at them here rather than being silently stuck forever. */}
-        {failedSync > 0 && (
+        {!window.tengaDesktop?.isDesktop && failedSync > 0 && (
           <button
             onClick={() => setShowSyncManager(true)}
             title={`${failedSync} item${failedSync !== 1 ? 's' : ''} couldn't sync — click to review`}
@@ -180,7 +180,7 @@ export default function TopBar({ onMenuClick }) {
           </button>
         )}
 
-        <div className="flex-shrink-0"><RefreshOnlineButton /></div>
+        {!window.tengaDesktop?.isDesktop && <div className="flex-shrink-0"><RefreshOnlineButton /></div>}
 
         {/* POS mode toggle — hidden below lg (also reachable via the avatar
             dropdown's own mode switcher, which is now the tablet/mobile
@@ -392,14 +392,16 @@ export default function TopBar({ onMenuClick }) {
       </div>
     )}
 
-    <SyncQueueManager
-      isOpen={showSyncManager}
-      onClose={() => setShowSyncManager(false)}
-      onChanged={() => {
-        pendingSyncCount().then(setPendingSync).catch(() => {})
-        failedSyncCount().then(setFailedSync).catch(() => {})
-      }}
-    />
+    {!window.tengaDesktop?.isDesktop && (
+      <SyncQueueManager
+        isOpen={showSyncManager}
+        onClose={() => setShowSyncManager(false)}
+        onChanged={() => {
+          pendingSyncCount().then(setPendingSync).catch(() => {})
+          failedSyncCount().then(setFailedSync).catch(() => {})
+        }}
+      />
+    )}
     </>
   )
 }

@@ -137,6 +137,7 @@ const exportColumns = [
 ]
 
 export default function Transactions() {
+  const isDesktop = window.tengaDesktop?.isDesktop === true
   const { tenant, role } = useAuthStore()
   const { posMode } = useThemeStore()
   const isWorkshop = posMode === 'workshop'
@@ -149,8 +150,8 @@ export default function Transactions() {
   const [validatingReturnId, setValidatingReturnId] = useState(null) // return id awaiting the goods-condition confirmation
   const [deletingId, setDeletingId] = useState(null)
 
-  const canApprove = ['shop_manager', 'supervisor', 'vendor'].includes(role)
-  const canValidate = role === 'vendor'
+  const canApprove = !isDesktop && ['shop_manager', 'supervisor', 'vendor'].includes(role)
+  const canValidate = !isDesktop && role === 'vendor'
 
   useEffect(() => {
     if (!tenant?.id) return
@@ -415,7 +416,7 @@ export default function Transactions() {
               {voidedStats.count} · {formatCurrency(voidedStats.total)}
             </p>
           </div>
-          {role === 'vendor' && (
+          {!isDesktop && role === 'vendor' && (
             <button
               onClick={handleClearVoided}
               disabled={clearingVoided}
@@ -476,6 +477,7 @@ export default function Transactions() {
                       const r = t.orderId ? returnByOrder[t.orderId] : null
 
                       if (!v && !r) {
+                        if (isDesktop) return <span className="text-xs text-slate-400">—</span>
                         return (
                           <div className="flex gap-1">
                             <button
@@ -543,7 +545,7 @@ export default function Transactions() {
                     })()}
                   </td>
                   <td className="px-4 py-3">
-                    {role === 'vendor' && (
+                    {!isDesktop && role === 'vendor' && (
                       <button
                         onClick={() => handleDeleteTransaction(t)}
                         disabled={deletingId === t.orderId}

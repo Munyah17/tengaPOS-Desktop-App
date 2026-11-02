@@ -11,6 +11,7 @@ import AdminLayout from '@/components/admin/AdminLayout'
 // one ~2.5MB bundle everyone downloads before anything renders, regardless
 // of which single page they actually landed on.
 const Landing = lazy(() => import('@/pages/Landing'))
+const DesktopSetup = lazy(() => import('@/pages/DesktopSetup'))
 const Demo = lazy(() => import('@/pages/Demo'))
 const Login = lazy(() => import('@/pages/Login'))
 const StaffLogin = lazy(() => import('@/pages/StaffLogin'))
@@ -94,6 +95,28 @@ function RouteLoading() {
   )
 }
 
+function DesktopEntry() {
+  const { isLoading, desktopSetupComplete } = useAuthStore()
+  if (!window.tengaDesktop?.isDesktop) return <Landing />
+  if (isLoading) return <RouteLoading />
+  return <Navigate to={desktopSetupComplete ? '/login' : '/setup'} replace />
+}
+
+function DesktopLogin() {
+  const { isLoading, desktopSetupComplete } = useAuthStore()
+  if (window.tengaDesktop?.isDesktop && isLoading) return <RouteLoading />
+  if (window.tengaDesktop?.isDesktop && !desktopSetupComplete) return <Navigate to="/setup" replace />
+  return <Login />
+}
+
+function DesktopSetupRoute() {
+  const { isLoading, desktopSetupComplete } = useAuthStore()
+  if (!window.tengaDesktop?.isDesktop) return <Navigate to="/" replace />
+  if (isLoading) return <RouteLoading />
+  if (desktopSetupComplete) return <Navigate to="/login" replace />
+  return <DesktopSetup />
+}
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -138,6 +161,7 @@ function ProtectedRoute({ children }) {
 
 function AppIndexRedirect() {
   const { role } = useAuthStore()
+  if (window.tengaDesktop?.isDesktop) return <Navigate to="pos" replace />
   const allowed = NAV_PERMISSIONS[role] || NAV_PERMISSIONS.vendor
   return <Navigate to={allowed[0] || 'dashboard'} replace />
 }
@@ -159,6 +183,9 @@ function DashboardGate() {
 // URL bar must not reach it just because ProtectedRoute passed.
 function RequireNav({ navKey, children }) {
   const { role } = useAuthStore()
+  if (window.tengaDesktop?.isDesktop && !['pos', 'inventory', 'transactions'].includes(navKey)) {
+    return <Navigate to="/app/pos" replace />
+  }
   const allowed = NAV_PERMISSIONS[role] || NAV_PERMISSIONS.vendor
   if (!allowed.includes(navKey)) {
     return <Navigate to={`/app/${allowed[0] || 'dashboard'}`} replace />
@@ -201,9 +228,10 @@ export default function App() {
       <BrowserRouter>
         <Suspense fallback={<RouteLoading />}>
         <Routes>
-          <Route path="/" element={<Landing />} />
+          <Route path="/" element={<DesktopEntry />} />
+          <Route path="/setup" element={<DesktopSetupRoute />} />
           <Route path="/demo" element={<Demo />} />
-          <Route path="/login" element={<Login />} />
+          <Route path="/login" element={<DesktopLogin />} />
           {/* Staff sign-in — separate from client /login. /super-admin is
               Super Admin only; /admin (unauthenticated) lands here too. */}
           <Route path="/super-admin" element={<StaffLogin variant="super" />} />

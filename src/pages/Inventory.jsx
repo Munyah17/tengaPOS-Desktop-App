@@ -50,6 +50,7 @@ const DISPENSING_CLASSES = [
 ]
 
 export default function Inventory() {
+  const isDesktop = window.tengaDesktop?.isDesktop === true
   const { posMode } = useThemeStore()
   const { tenant, branch } = useAuthStore()
   const isRestaurant = posMode === 'restaurant'
@@ -416,12 +417,23 @@ export default function Inventory() {
 
   const handleSave = async (e) => {
     e.preventDefault()
+    if (isDesktop && imageFile) {
+      try {
+        const dataUrl = await uploadProductImage(tenant.id, imageFile)
+        setForm((current) => ({ ...current, imageUrl: dataUrl }))
+        setImagePreview(dataUrl)
+        setImageFile(null)
+      } catch (error) {
+        toast.error(error.message || 'Could not save product image')
+        return
+      }
+    }
     if (!hasImage && !form.imageUnavailable) {
       toast.error('Add a product image, or tick "Product Image Not Available"')
       return
     }
     setSaving(true)
-    const offline = !navigator.onLine
+    const offline = !isDesktop && !navigator.onLine
     try {
       let imageUrl = form.imageUrl
       // Can't upload to Storage without a connection — keep whatever image
@@ -480,6 +492,7 @@ export default function Inventory() {
           toast.success('Product added')
         }
       } catch (err) {
+        if (isDesktop) throw err
         // Network/server error mid-save — queue it rather than lose the edit
         await queueOfflineInventoryWrite(editTarget ? 'update' : 'insert', tenant.id, payload, editTarget?.id)
         toast('Connection issue — product saved, will sync automatically', { icon: '📴' })

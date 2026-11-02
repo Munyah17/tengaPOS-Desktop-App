@@ -1,0 +1,5 @@
+# Copilot Instructions
+
+## Project Guidelines
+- Desktop licensing policy: fresh installs require online validation of a single-use license bound to the device before any app use. Once activated, offline operation has no expiry/mandatory reconnection limit. Whenever network connectivity returns, check in with tengaPOS licensing/update servers immediately; while online, also perform a daily check-in (every 24 hours). License check-ins are separate from sales/business-data sync.
+- Desktop licensing telemetry policy: maintain a local license-management component that queues signed/auditable activation, license, and security events while offline and reports them when connectivity returns. A firewall block should be distinguishable from ordinary offline status; do not make offline operation fail solely because the server is unreachable, since the accepted policy allows indefinite offline work. If an online check-in is due and blocked, show a clear unblock message and retry without silently marking the check-in successful.

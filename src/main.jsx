@@ -58,31 +58,33 @@ const SW_UPDATE_CHECK_INTERVAL_MS = 30 * 60 * 1000
 const SW_TOAST_COOLDOWN_MS = 15 * 60 * 1000
 const SW_TOAST_LAST_SHOWN_KEY = 'tengapos_sw_toast_last_shown'
 
-registerSW({
-  immediate: true,
-  onRegisteredSW(swUrl, registration) {
-    if (!registration) return
-    setInterval(() => { registration.update().catch(() => {}) }, SW_UPDATE_CHECK_INTERVAL_MS)
-  },
-  onNeedRefresh() {
-    try {
-      const last = Number(localStorage.getItem(SW_TOAST_LAST_SHOWN_KEY) || 0)
-      if (Date.now() - last < SW_TOAST_COOLDOWN_MS) return
-      localStorage.setItem(SW_TOAST_LAST_SHOWN_KEY, String(Date.now()))
-    } catch { /* localStorage unavailable — fall through and show it anyway */ }
-    toast(
-      (t) => (
-        <span className="flex items-center gap-3">
-          <span>A new version is available</span>
-          <button
-            onClick={() => { toast.dismiss(t.id); hardReload() }}
-            className="rounded-lg bg-brand-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-brand-700"
-          >
-            Refresh
-          </button>
-        </span>
-      ),
-      { duration: 20000, id: 'sw-update-available' },
-    )
-  },
-})
+if (!window.tengaDesktop?.isDesktop) {
+  registerSW({
+    immediate: true,
+    onRegisteredSW(swUrl, registration) {
+      if (!registration) return
+      setInterval(() => { registration.update().catch(() => {}) }, SW_UPDATE_CHECK_INTERVAL_MS)
+    },
+    onNeedRefresh() {
+      try {
+        const last = Number(localStorage.getItem(SW_TOAST_LAST_SHOWN_KEY) || 0)
+        if (Date.now() - last < SW_TOAST_COOLDOWN_MS) return
+        localStorage.setItem(SW_TOAST_LAST_SHOWN_KEY, String(Date.now()))
+      } catch { /* localStorage unavailable — fall through and show it anyway */ }
+      toast(
+        (t) => (
+          <span className="flex items-center gap-3">
+            <span>A new version is available</span>
+            <button
+              onClick={() => { toast.dismiss(t.id); hardReload() }}
+              className="rounded-lg bg-brand-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-brand-700"
+            >
+              Refresh
+            </button>
+          </span>
+        ),
+        { duration: 20000, id: 'sw-update-available' },
+      )
+    },
+  })
+}
