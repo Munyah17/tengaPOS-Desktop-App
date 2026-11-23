@@ -200,11 +200,12 @@ function DesktopLicenseGate({ children }) {
   </>
 }
 
-// Optional in-app updates — the license monitor dispatches an event when the
-// release feed has a newer signed build; installing goes through the main
-// process which re-verifies checksum + signature before relaunching.
-// Mandatory updates (min_supported_version floor) apply immediately and never
-// reach this banner.
+// In-app updates — the license monitor dispatches an event when the release
+// feed has a newer signed build; installing goes through the main process
+// which re-verifies checksum + signature before relaunching. Mandatory
+// updates (min_supported_version floor) show the same banner without a
+// "Later" option — the cashier picks the moment to restart so an active
+// cart is never discarded.
 function DesktopUpdateBanner() {
   const [update, setUpdate] = useState(null)
   const [applying, setApplying] = useState(false)
@@ -228,7 +229,11 @@ function DesktopUpdateBanner() {
 
   return (
     <div className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-white/10 bg-slate-900 px-4 py-3 text-sm text-white shadow-2xl">
-      <span>tengaPOS v{update.version} is available</span>
+      <span>
+        {update.mandatory
+          ? `tengaPOS v${update.version} is required — restart when ready`
+          : `tengaPOS v${update.version} is available`}
+      </span>
       <button
         onClick={apply}
         disabled={applying}
@@ -236,7 +241,9 @@ function DesktopUpdateBanner() {
       >
         {applying ? 'Installing…' : 'Restart & update'}
       </button>
-      <button onClick={() => setUpdate(null)} className="text-xs text-slate-400 hover:text-slate-200">Later</button>
+      {!update.mandatory && (
+        <button onClick={() => setUpdate(null)} className="text-xs text-slate-400 hover:text-slate-200">Later</button>
+      )}
     </div>
   )
 }
