@@ -93,6 +93,10 @@ function leaseToClaims(lease, stored) {
     issued_at: lease.issued_at,
     plan: lease.entitlements?.plan || stored?.claims?.plan || null,
     currency: stored?.shop_bootstrap?.currency || stored?.claims?.currency || 'USD',
+    // Cloud Hosting Fee — paid add-on; business-data cloud sync is gated on
+    // it (still fully offline-capable without it, by design).
+    cloud_sync: lease.entitlements?.features?.cloud_sync === true,
+    cloud_sync_expires_at: lease.entitlements?.features?.cloud_sync_expires_at || null,
   }
 }
 
@@ -329,7 +333,17 @@ export function startDesktopLicenseMonitor() {
       publishConnectionState(false)
       try {
         const update = await checkForDesktopUpdate()
-        if (update) await recordLicenseEvent('update_available', { version: update.manifest.version, mandatory: update.mandatory })
+        if (update) {
+          await recordLicenseEvent('update_available', { version: update.manifest.version, mandatory: update.mandatory })
+          if (update.mandatory) {
+            // min_supported_version floor — install immediately.
+            await applyDesktopUpdate(update.manifest)
+          } else {
+            window.dispatchEvent(new CustomEvent('tenga:desktop-update-available', {
+              detail: { version: update.manifest.version, mandatory: false, manifest: update.manifest },
+            }))
+          }
+        }
       } catch { /* update checks never affect sales */ }
     } catch (error) {
       await recordLicenseEvent('check_in_failed', {
@@ -367,6 +381,43 @@ export function startDesktopLicenseMonitor() {
 
 export async function queueDesktopLicenseEvent(type, details = {}) {
   await recordLicenseEvent(type, details)
+}
+
+/** Cloud Hosting Fee entitlement — true while the tenant's paid
+ * desktop_cloud_sync subscription is active. Business-data cloud sync
+ * checks this before draining anything to the server; licensing/report
+ * telemetry is unaffected either way (it's the license channel, not sync). */
+export async function isCloudSyncEnabled() {
+  const stored = await db.desktopLicense.get('current')
+  return stored?.entitlements?.features?.cloud_sync === true
+}
+
+/** Contract §2.5: resolve the published artifact's download URL via the
+ * public download-info endpoint, cross-check the checksum against the
+ * signed manifest, then hand everything to the main process which
+ * re-verifies sha256 + signature before running the installer. */
+export async function applyDesktopUpdate(manifest) {
+  if (!window.tengaDesktop?.applyDesktopUpdate) {
+    throw new Error('Desktop update support is unavailable in this build')
+  }
+  const artifact = (manifest?.artifacts || []).find((a) => a.os === APP_OS)
+  if (!artifact?.sha256 || !artifact?.signature) {
+    throw new Error('No installer is published for this device yet')
+  }
+  const info = await apiFetch('GET', '/v1/download/info', {
+    query: { os: APP_OS, channel: manifest.channel || 'stable' },
+  })
+  if (!info?.url) throw new Error('Update download is unavailable')
+  if (info.sha256 && info.sha256.toLowerCase() !== artifact.sha256.toLowerCase()) {
+    throw new Error('Published installer does not match the update manifest')
+  }
+  return window.tengaDesktop.applyDesktopUpdate({
+    url: info.url,
+    sha256: artifact.sha256,
+    signature: artifact.signature,
+    serverPublicKey: SERVER_PUBLIC_KEY,
+    version: manifest.version,
+  })
 }
 
 export function isDesktopLicenseApiConfigured() {

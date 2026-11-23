@@ -115,6 +115,50 @@ ipcMain.handle('license:sign-check-in', (event, message) => {
   return signature.toString('base64')
 })
 
+// Ed25519 SPKI DER prefix — the renderer's embedded server public key is the
+// raw 32-byte key (base64); node:crypto needs the full SPKI wrapper.
+const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex')
+
+// Contract §2.5/§7: download the published installer, verify sha256 AND the
+// artifact ed25519 signature (signed over the sha256 digest bytes), then run
+// the NSIS installer silently and quit — local POS data lives in userData,
+// outside the install dir, so it survives the upgrade.
+ipcMain.handle('license:apply-update', async (event, request) => {
+  assertTrustedLicenseSender(event)
+  const { url, sha256, signature, serverPublicKey, version } = request || {}
+  if ([url, sha256, signature, serverPublicKey].some((v) => typeof v !== 'string' || !v)) {
+    throw new Error('Invalid update request')
+  }
+  const artifactUrl = new URL(url)
+  if (artifactUrl.protocol !== 'https:') throw new Error('Update URL must be HTTPS')
+
+  const response = await fetch(artifactUrl)
+  if (!response.ok) throw new Error(`Update download failed (${response.status})`)
+  const bytes = Buffer.from(await response.arrayBuffer())
+
+  const digest = crypto.createHash('sha256').update(bytes).digest()
+  if (digest.toString('hex') !== sha256.toLowerCase()) {
+    throw new Error('Update checksum mismatch — download discarded')
+  }
+  const publicKey = crypto.createPublicKey({
+    key: Buffer.concat([ED25519_SPKI_PREFIX, Buffer.from(serverPublicKey, 'base64')]),
+    format: 'der',
+    type: 'spki',
+  })
+  if (!crypto.verify(null, digest, publicKey, Buffer.from(signature, 'base64'))) {
+    throw new Error('Update signature is invalid — download discarded')
+  }
+
+  const safeVersion = String(version || 'latest').replace(/[^\w.-]/g, '_')
+  const installerPath = path.join(app.getPath('temp'), `tengapos-update-${safeVersion}.exe`)
+  require('node:fs').writeFileSync(installerPath, bytes, { mode: 0o600 })
+
+  const child = require('node:child_process').spawn(installerPath, ['/S'], { detached: true, stdio: 'ignore' })
+  child.unref()
+  app.quit()
+  return { ok: true }
+})
+
 /** @returns {Promise<void>} */
 function startLocalServer() {
   server = createServer(/** @param {import('node:http').IncomingMessage} request @param {import('node:http').ServerResponse} response */ async (request, response) => {

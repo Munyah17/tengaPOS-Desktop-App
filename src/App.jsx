@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'react-hot-toast'
+import toast from 'react-hot-toast'
 import { useEffect, useState, lazy, Suspense } from 'react'
 import { useThemeStore } from '@/stores/themeStore'
 import { useAuthStore, NAV_PERMISSIONS } from '@/stores/authStore'
@@ -193,7 +194,51 @@ function DesktopLicenseGate({ children }) {
   if (connectionBlock && location.pathname !== '/desktop-license') {
     return <DesktopLicenseConnectionBlock message={connectionBlock.message} />
   }
-  return children
+  return <>
+    {children}
+    <DesktopUpdateBanner />
+  </>
+}
+
+// Optional in-app updates — the license monitor dispatches an event when the
+// release feed has a newer signed build; installing goes through the main
+// process which re-verifies checksum + signature before relaunching.
+// Mandatory updates (min_supported_version floor) apply immediately and never
+// reach this banner.
+function DesktopUpdateBanner() {
+  const [update, setUpdate] = useState(null)
+  const [applying, setApplying] = useState(false)
+  useEffect(() => {
+    const handle = (event) => setUpdate(event.detail || null)
+    window.addEventListener('tenga:desktop-update-available', handle)
+    return () => window.removeEventListener('tenga:desktop-update-available', handle)
+  }, [])
+  if (!window.tengaDesktop?.isDesktop || !update?.manifest) return null
+
+  const apply = async () => {
+    setApplying(true)
+    try {
+      const { applyDesktopUpdate } = await import('@/lib/desktopLicense')
+      await applyDesktopUpdate(update.manifest)
+    } catch (error) {
+      toast.error(error?.message || 'Update failed to install')
+      setApplying(false)
+    }
+  }
+
+  return (
+    <div className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-white/10 bg-slate-900 px-4 py-3 text-sm text-white shadow-2xl">
+      <span>tengaPOS v{update.version} is available</span>
+      <button
+        onClick={apply}
+        disabled={applying}
+        className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-700 disabled:opacity-60"
+      >
+        {applying ? 'Installing…' : 'Restart & update'}
+      </button>
+      <button onClick={() => setUpdate(null)} className="text-xs text-slate-400 hover:text-slate-200">Later</button>
+    </div>
+  )
 }
 
 function DesktopLicenseConnectionBlock({ message }) {
