@@ -31,3 +31,6 @@ release
 .claude/
 supabase/.temp/
 .env*
+
+# Generated at build time by scripts/write-server-key.cjs
+electron/license-server-key.cjs

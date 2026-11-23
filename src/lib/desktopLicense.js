@@ -335,14 +335,11 @@ export function startDesktopLicenseMonitor() {
         const update = await checkForDesktopUpdate()
         if (update) {
           await recordLicenseEvent('update_available', { version: update.manifest.version, mandatory: update.mandatory })
-          if (update.mandatory) {
-            // min_supported_version floor — install immediately.
-            await applyDesktopUpdate(update.manifest)
-          } else {
-            window.dispatchEvent(new CustomEvent('tenga:desktop-update-available', {
-              detail: { version: update.manifest.version, mandatory: false, manifest: update.manifest },
-            }))
-          }
+          // Mandatory or optional, the cashier decides when to restart —
+          // silently quitting mid-sale would discard the in-memory cart.
+          window.dispatchEvent(new CustomEvent('tenga:desktop-update-available', {
+            detail: { version: update.manifest.version, mandatory: update.mandatory, manifest: update.manifest },
+          }))
         }
       } catch { /* update checks never affect sales */ }
     } catch (error) {
@@ -411,11 +408,12 @@ export async function applyDesktopUpdate(manifest) {
   if (info.sha256 && info.sha256.toLowerCase() !== artifact.sha256.toLowerCase()) {
     throw new Error('Published installer does not match the update manifest')
   }
+  // The verification key is pinned inside the main process — the renderer
+  // only supplies what to install, never what to trust.
   return window.tengaDesktop.applyDesktopUpdate({
     url: info.url,
     sha256: artifact.sha256,
     signature: artifact.signature,
-    serverPublicKey: SERVER_PUBLIC_KEY,
     version: manifest.version,
   })
 }
